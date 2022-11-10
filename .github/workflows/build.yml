@@ -1,0 +1,107 @@
+name: Git rest api validation build
+run-name: ${{ github.actor }} is learning GitHub Actions
+on:
+  push:
+  pull_request:
+    branches: [ master ]
+    paths:
+    - '**.cs'
+    - '**.csproj'
+
+env:
+  DOTNET_VERSION: '6.0.403' # The .NET SDK version to use
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install dependencies
+      run: dotnet restore
+
+    # currently limited to windows: https://github.com/dotnet/code-analysis#limitations
+    #- name: Run .NET Code Analysis
+    #  uses: dotnet/code-analysis@main
+    #  id: code-analysis
+    #  with:
+    #    solution: Git.Server.sln
+    #    build-breaking: true
+    #    all-categories: all
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test
+      run: dotnet test DataAccess.Tests.Units/DataAccess.Tests.Units.csproj --no-restore --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+    - name: Test
+      run: dotnet test Services.Tests.Units/Services.Tests.Units.csproj --no-restore --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+    # exception currently being thrown as the Systems tests aren't being run and are producing an empty coverage report: https://github.com/irongut/CodeCoverageSummary/blob/master/src/CodeCoverageSummary/Program.cs#L210
+    - name: Code Coverage Report
+      uses: irongut/CodeCoverageSummary@v1.3.0
+      with:
+        filename: coverage/**/coverage.cobertura.xml
+        badge: true
+        fail_below_min: true
+        format: markdown
+        hide_branch_rate: false
+        hide_complexity: false
+        indicators: true
+        output: both
+        thresholds: '60 80'
+
+    - name: Add Coverage PR Comment
+      uses: marocchino/sticky-pull-request-comment@v2
+      if: github.event_name == 'pull_request'
+      with:
+        recreate: true
+        path: code-coverage-results.md
+
+  analyze:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['csharp']
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 2
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: false
+          file: Apis/Dockerfile

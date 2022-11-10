@@ -1,0 +1,10 @@
+﻿version: '3'
+services:
+  git-server:
+    build:
+      context: ./
+      dockerfile: ./Apis/Dockerfile
+    ports:
+    - "4567:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
